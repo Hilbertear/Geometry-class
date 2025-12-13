@@ -4,58 +4,17 @@ import plotly.graph_objects as go
 
 # --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="几何变换全能演示(最终版)",
+    page_title="几何变换全能演示(最终修正版)",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 2. 强制注入 CSS (核心修复：让顶部按钮变黑) ---
-st.markdown("""
-    <style>
-    /* 1. 全局背景强制变白，文字变黑 */
-    .stApp {
-        background-color: #ffffff;
-        color: #000000;
-    }
-    
-    /* 2. 顶部导航栏 (Header) 背景变白 */
-    header[data-testid="stHeader"] {
-        background-color: #ffffff !important;
-    }
-    
-    /* 3. 【关键】强制顶部按钮 (Share, GitHub, Menu) 的图标变黑 */
-    header[data-testid="stHeader"] button, 
-    header[data-testid="stHeader"] svg, 
-    header[data-testid="stHeader"] a {
-        color: #000000 !important; /* 文字变黑 */
-        fill: #000000 !important;  /* 图标填充变黑 */
-    }
-    
-    /* 4. 侧边栏背景设置为浅灰，区分主区域 */
-    section[data-testid="stSidebar"] {
-        background-color: #f5f7f9; /* 很浅的灰蓝色 */
-        color: #000000;
-    }
-    
-    /* 5. 强制所有标题、段落、标签变黑 */
-    h1, h2, h3, h4, h5, h6, p, div, span, label, li {
-        color: #000000 !important;
-    }
-    
-    /* 6. 修复组件内部文字颜色 (滑块、单选框等) */
-    .stSlider label, .stRadio label, .stMarkdown {
-        color: #000000 !important;
-    }
-    
-    /* 7. 让 Streamlit 的加载条也变成显眼的颜色 (可选) */
-    .stProgress > div > div > div > div {
-        background-color: #4CAF50;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# 【注意】我删除了之前所有的 CSS 样式代码。
+# 现在，网页会自动跟随你的系统设置（深色模式），文字会自动变亮。
+# 只有下面的 Plotly 图表会被强制画成白底。
 
 # ==========================================
-# PART A: 数学核心逻辑
+# PART A: 数学核心逻辑 (保持不变)
 # ==========================================
 def get_triangle_CDE(c, angle_deg):
     theta = np.radians(angle_deg)
@@ -105,7 +64,7 @@ def get_trace_data(c, n, angle, progress):
     
     is_intersect = check_intersection(pts_trans)
     highlight = is_intersect and (progress > 0.9)
-    # 颜色代码：#FF0000(红), #008000(绿) - 适配白底
+    # 颜色：红/绿
     de_color = '#FF0000' if highlight else '#008000' 
     de_width = 5 if highlight else 3
     
@@ -124,7 +83,7 @@ def get_trace_data(c, n, angle, progress):
     }
 
 # ==========================================
-# PART C: 侧边栏 (默认值定义，防止报错)
+# PART C: 侧边栏控制
 # ==========================================
 with st.sidebar:
     st.header("🎮 演示控制器")
@@ -135,7 +94,7 @@ with st.sidebar:
     )
     st.divider()
     
-    # 预设默认值
+    # 默认值
     c_val, n_val, angle_val = 1.0, 3.0, 180
     current_progress = 1.0
     anim_steps = []
@@ -199,7 +158,7 @@ elif anim_var_name == "angle": init_params = (c_val, n_val, start_val, current_p
 d0 = get_trace_data(*init_params)
 
 # ==========================================
-# PART E: 绘图与布局 (印刷风格)
+# PART E: 绘图与布局 (核心改动区)
 # ==========================================
 st.title("📐 几何变换全能演示系统")
 
@@ -209,7 +168,7 @@ st.markdown(f"**📊 理论计算：** 当前状态下，使图形相交的 $c$ 
 
 fig = go.Figure(
     data=[
-        # [0] y=x
+        # [0] y=x (黑色虚线)
         go.Scatter(x=[-10, 20], y=[-10, 20], mode='lines', line=dict(color='black', width=1.5, dash='dash'), name='y=x'),
         # [1] 对称轴
         go.Scatter(x=[-10, 20], y=d0['n_line_y'], mode='lines', line=dict(color='blue', dash='dashdot'), name='对称轴'),
@@ -234,37 +193,50 @@ fig = go.Figure(
     frames=frames
 )
 
-# 布局
+# 布局设置
 fig.update_layout(
-    # 核心：纯白背景
-    paper_bgcolor='rgba(255,255,255,1)', 
-    plot_bgcolor='rgba(255,255,255,1)',
+    # --- 1. 背景颜色设置 ---
+    # 强制图表区域变成白纸
+    paper_bgcolor='white', 
+    plot_bgcolor='white',
+    
+    # --- 2. 字体颜色设置 ---
+    # 强制图表内的所有文字变黑 (因为网页是暗色的，Plotly默认可能会用白字，所以必须强制改黑)
+    font=dict(color="black"),
     
     height=700,
     title=dict(text=f"<b>当前演示模式：{mode.split(' ')[1]}</b>", font=dict(size=20, color="black"), x=0.5),
     
+    # --- 3. 坐标轴设置 (强制黑色) ---
     xaxis=dict(
         range=[-6, 12], 
         zeroline=True, zerolinecolor='black', zerolinewidth=2,
         gridcolor='#e0e0e0', gridwidth=1,
-        tickfont=dict(color='black', size=14), showgrid=True
+        tickfont=dict(color='black', size=14), # 强制刻度黑字
+        title_font=dict(color='black'),        # 强制标题黑字
+        showgrid=True
     ),
     yaxis=dict(
         range=[-6, 12], scaleanchor="x", scaleratio=1,
         zeroline=True, zerolinecolor='black', zerolinewidth=2,
         gridcolor='#e0e0e0', gridwidth=1,
-        tickfont=dict(color='black', size=14), showgrid=True
+        tickfont=dict(color='black', size=14),
+        title_font=dict(color='black'),
+        showgrid=True
     ),
     
+    # --- 4. 图例设置 (白底黑字黑框) ---
     legend=dict(
         x=0.01, y=0.99, bgcolor="white",
         bordercolor="black", borderwidth=1,
         font=dict(color="black", size=12)
     ),
     
+    # --- 5. 动画控件样式 ---
     updatemenus=[dict(
         type="buttons", showactive=False,
         x=0.05, y=0, xanchor="right", yanchor="top",
+        # 按钮背景白，文字黑
         bgcolor="white", bordercolor="black", borderwidth=1, font=dict(color="black"),
         buttons=[dict(label="▶️ 播放动画", method="animate", args=[None, dict(frame=dict(duration=50, redraw=True), fromcurrent=True)])]
     )],
@@ -276,6 +248,7 @@ fig.update_layout(
             label=f"{v:.1f}"
         ) for v in anim_steps],
         active=0,
+        # 滑块文字颜色
         currentvalue=dict(prefix=f"{anim_var_name} : ", font=dict(color="black")),
         pad=dict(t=0), font=dict(color="black"),
         bgcolor="white", bordercolor="lightgray", borderwidth=1
