@@ -1,147 +1,124 @@
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
+import plotly.graph_objects as go # 引入 Plotly 的图表对象
 
 # --- 1. 页面配置 ---
-st.set_page_config(page_title="第33题动态演示", layout="wide")
+st.set_page_config(page_title="几何变换演示课堂", layout="wide")
 
-# 解决中文显示问题 (Streamlit Cloud Linux环境通常没有黑体，这里使用通用字体回退方案)
-plt.rcParams['font.sans-serif'] = ['sans-serif'] 
-plt.rcParams['axes.unicode_minus'] = False
+# ==============================================
+# 【区域 A】: 请把你的几何计算函数粘贴到这里
+# ==============================================
+# 这里的代码是我为了演示写的假数据。
+# 你需要用你原来的 get_triangle_CDE 等函数替换掉下面这个函数。
 
-# --- 2. 核心数学逻辑 (保持不变) ---
-def get_triangle_CDE(c, angle_deg):
-    theta = np.radians(angle_deg)
-    xc, yc = c, c
-    xd = xc + 2 * np.cos(theta)
-    yd = yc + 2 * np.sin(theta)
-    theta_de = theta - np.pi/2
-    xe = xd + 2 * np.cos(theta_de)
-    ye = yd + 2 * np.sin(theta_de)
-    return np.array([[xc, yc], [xd, yd], [xe, ye]])
-
-def apply_n_transform(points, n, progress):
-    trans_points = points.copy()
-    if progress <= 0.5:
-        # 翻折阶段
-        t = progress / 0.5
-        trans_points[:, 1] = points[:, 1] * (1 - t) + (2 * n - points[:, 1]) * t
-    else:
-        # 平移阶段
-        trans_points[:, 1] = 2 * n - points[:, 1]
-        t = (progress - 0.5) / 0.5
-        trans_points[:, 0] = points[:, 0] + t * n
-    return trans_points
-
-def check_validity(points, c):
-    # 稍微放宽一点精度，避免浮点数误差
-    return points[1, 0] <= c + 1e-4 and points[2, 0] <= c + 1e-4
-
-def calc_c_range(angle_deg, n):
-    base_tri = get_triangle_CDE(0, angle_deg)
-    sum_D = base_tri[1, 0] + base_tri[1, 1]
-    sum_E = base_tri[2, 0] + base_tri[2, 1]
-    c1 = (n - sum_D) / 2
-    c2 = (n - sum_E) / 2
-    return min(c1, c2), max(c1, c2)
-
-# --- 3. 侧边栏控制区 ---
-st.sidebar.header("🕹️ 控制面板")
-
-# 1. 变换动画
-prog = st.sidebar.slider("1. 变换进度 (n型变换)", 0.0, 1.0, 0.0, 0.01)
-
-# 2. 几何参数
-st.sidebar.markdown("---")
-c = st.sidebar.slider("2. 点C位置 (参数 c)", -5.0, 8.0, 1.0, 0.1)
-n = st.sidebar.slider("3. 参数 n", 1.0, 5.0, 3.0, 0.1)
-angle = st.sidebar.slider("4. 旋转角度", 0.0, 360.0, 180.0, 5.0)
-
-# --- 4. 主绘图区 ---
-st.title("📐 第(3)问：n型对照变换与c的取值范围")
-st.markdown("拖动左侧滑块，观察三角形的变化。")
-
-# 创建图形
-fig, ax = plt.subplots(figsize=(8, 8))
-ax.set_aspect('equal')
-ax.set_xlim(-6, 12)
-ax.set_ylim(-6, 12)
-ax.grid(True, linestyle='--', alpha=0.4)
-
-# 绘制辅助线
-ax.plot([-10, 20], [-10, 20], 'k--', linewidth=1, label='y=x')
-ax.plot([-10, 20], [n, n], 'b-.', linewidth=1, label=f'y={n}')
-
-# 计算数据
-pts_orig = get_triangle_CDE(c, angle)
-is_valid = check_validity(pts_orig, c)
-pts_trans = apply_n_transform(pts_orig, n, prog)
-
-# 绘制三角形
-if is_valid:
-    color_orig = 'purple'
-    color_trans = 'green'
-    alpha_trans = 0.6
-    status_msg = "✅ 满足题意 (xD≤c, xE≤c)"
-else:
-    color_orig = 'gray'
-    color_trans = 'gray'
-    alpha_trans = 0.3
-    status_msg = "❌ 不合题意 (存在点横坐标 > c)"
-
-# 原三角形
-poly_orig = Polygon(pts_orig, closed=True, fill=False, edgecolor=color_orig, linestyle='--', linewidth=1)
-ax.add_patch(poly_orig)
-
-# 变换后三角形
-poly_trans = Polygon(pts_trans, closed=True, color=color_trans, alpha=alpha_trans)
-ax.add_patch(poly_trans)
-
-# 标注顶点
-offset = 0.4
-labels = ['C', 'D', 'E']
-for i, p in enumerate(pts_orig):
-    ax.text(p[0], p[1]+offset, labels[i], color=color_orig, fontsize=10, ha='center')
-
-for i, p in enumerate(pts_trans):
-    ax.text(p[0], p[1]-offset, labels[i]+"'", color='darkgreen' if is_valid else 'gray', fontsize=10, ha='center')
-
-# 计算和绘制 c 的范围
-c_min, c_max = calc_c_range(angle, n)
-if is_valid:
-    ax.plot([c_min, c_max], [c_min, c_max], 'r-', linewidth=4, alpha=0.5, label='c 可行范围')
-
-# 判断交点
-has_intersection = False
-if prog >= 0.99:
-    d_prime = pts_trans[1]
-    e_prime = pts_trans[2]
-    val_d = d_prime[1] - d_prime[0]
-    val_e = e_prime[1] - e_prime[0]
-    has_intersection = (val_d * val_e <= 0)
-
-# 显示图例
-ax.legend(loc='upper left')
-
-# 在 Streamlit 中显示 Matplotlib 图形
-st.pyplot(fig)
-
-# --- 5. 文字信息反馈区 ---
-col1, col2 = st.columns(2)
-with col1:
-    st.info(f"**当前状态**: {status_msg}")
+def 你的几何计算函数(progress, c_val, n_val, angle_val):
+    """
+    这是一个占位函数，请用你自己的真实计算逻辑替换它。
+    目标是返回三角形三个顶点的坐标。
+    """
+    # --- 这是一个模拟的运动轨迹，仅供演示 ---
+    # 模拟点 C 在 y=x 上移动
+    xc = c_val + progress * 2
+    yc = c_val + progress * 2
     
-    intersect_str = "等待变换完成..."
-    if prog >= 0.99:
-        intersect_str = "🔴 相交" if has_intersection else "🔵 不相交"
-    st.write(f"**D'E' 与 y=x 关系**: {intersect_str}")
-
-with col2:
-    st.success(f"**c 的理论范围**: [{c_min:.2f}, {c_max:.2f}]")
+    # 模拟一个简单的三角形绕点 C 旋转
+    theta = np.radians(angle_val)
+    # 定义一个初始小三角形（相对于 C 点）
+    base_triangle = np.array([[0, 0], [2, 0], [1, 1.732]]) * n_val/3 # 根据 n 缩放
     
-    delta = 0.05
-    if c_min - delta <= c <= c_max + delta:
-         st.write(f"**当前 c = {c:.2f}** (在范围内 ✅)")
-    else:
-         st.write(f"**当前 c = {c:.2f}** (在范围外)")
+    # 旋转矩阵
+    rot_matrix = np.array([[np.cos(theta), -np.sin(theta)],
+                           [np.sin(theta),  np.cos(theta)]])
+    
+    # 旋转并平移到 C 点
+    rotated_triangle = base_triangle.dot(rot_matrix.T)
+    final_triangle = rotated_triangle + np.array([xc, yc])
+    
+    # 为了画闭合多边形，把第一个点再加到最后
+    final_triangle_closed = np.vstack([final_triangle, final_triangle[0]])
+    
+    return final_triangle_closed, xc, yc
+# ==============================================
+# 【区域 A 结束】
+# ==============================================
+
+
+# --- 2. 侧边栏：控制面板 (中文) ---
+with st.sidebar:
+    st.header("🎮 控制面板")
+    st.write("调整参数观察几何变换")
+    
+    # 进度滑块
+    progress = st.slider("▶️ 变换进度 (n型变换)", 0.0, 1.0, 0.5, 0.01)
+    st.divider() # 分割线
+
+    # 参数滑块
+    c_val = st.slider("🅰️ 点 C 位置 (参数 c)", -5.0, 8.0, 4.0, 0.1)
+    n_val = st.slider("🅱️ 参数 n (缩放大小)", 1.0, 5.0, 3.0, 0.1)
+    angle_val = st.slider("🔄 旋转角度", 0, 360, 45, 1)
+
+
+# --- 3. 主体界面 ---
+st.title("📐 初中数学：n型对照变换动态演示")
+st.markdown("### 观察思考：随着参数变化，三角形的顶点轨迹有何规律？")
+
+# 调用计算函数，获取数据
+# 【重要】：如果你替换了上面的函数，记得这里调用的名字也要改
+triangle_coords, xc_now, yc_now = 你的几何计算函数(progress, c_val, n_val, angle_val)
+
+
+# --- 4. Plotly 画图核心逻辑 (全新的部分) ---
+
+# 创建一个空白画布
+fig = go.Figure()
+
+# [图层1]: 画辅助线 y=x
+fig.add_trace(go.Scatter(
+    x=[-10, 20], y=[-10, 20],
+    mode='lines',
+    name='辅助线 y=x',
+    line=dict(color='gray', width=2, dash='dash') # 灰色虚线
+))
+
+# [图层2]: 画当前的 C 点位置提示线
+fig.add_trace(go.Scatter(
+    x=[xc_now, xc_now], y=[-10, 20],
+    mode='lines',
+    name=f'当前C点横坐标={xc_now:.1f}',
+    line=dict(color='red', width=1, dash='dot'), # 红色细点划线
+    hoverinfo='skip' # 鼠标放上去不显示信息，避免干扰
+))
+
+# [图层3]: 画三角形 (核心)
+fig.add_trace(go.Scatter(
+    x=triangle_coords[:, 0], # 所有顶点的 X 坐标
+    y=triangle_coords[:, 1], # 所有顶点的 Y 坐标
+    fill='toself', # 填充闭合区域
+    fillcolor='rgba(0, 200, 100, 0.5)', # 半透明绿色填充
+    line=dict(color='green', width=3), # 绿色边框线条
+    name='变换三角形 (目标)',
+    mode='lines+markers', # 显示线和顶点
+    marker=dict(size=8) # 顶点大小
+))
+
+
+# --- 5. 设置画布布局 (关键步骤) ---
+# 这一步是为了让几何图形不变形，正方形看起来就是正方形
+fig.update_layout(
+    # 设置标题和字体大小
+    title=dict(text="几何变换平面直角坐标系", font=dict(size=20)),
+    # 设置 X 轴和 Y 轴的范围 (固定范围，防止画面跳动)
+    xaxis=dict(range=[-8, 18], title="X 轴", zeroline=True, gridcolor='lightgray'),
+    yaxis=dict(range=[-5, 15], title="Y 轴", zeroline=True, gridcolor='lightgray',
+               scaleanchor="x", scaleratio=1), # 【重要】强制 XY 轴比例 1:1
+    # 设置画布大小和背景色
+    width=800, height=800,
+    plot_bgcolor='white',
+    hovermode='closest', # 鼠标悬停模式
+    # 图例位置
+    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor='rgba(255,255,255,0.8)')
+)
+
+# --- 6. 在 Streamlit 中显示 Plotly 图表 ---
+# use_container_width=True 让图表自适应网页宽度
+st.plotly_chart(fig, use_container_width=True)
