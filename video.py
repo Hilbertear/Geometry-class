@@ -4,35 +4,52 @@ import plotly.graph_objects as go
 
 # --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="几何变换全能演示(白板模式)",
+    page_title="几何变换全能演示(最终版)",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 强制注入 CSS 样式 (解决网页背景问题) ---
+# --- 2. 强制注入 CSS (核心修复：让顶部按钮变黑) ---
 st.markdown("""
     <style>
-    /* 强制主背景变白 */
+    /* 1. 全局背景强制变白，文字变黑 */
     .stApp {
         background-color: #ffffff;
         color: #000000;
     }
-    /* 强制侧边栏背景变浅灰 */
+    
+    /* 2. 顶部导航栏 (Header) 背景变白 */
+    header[data-testid="stHeader"] {
+        background-color: #ffffff !important;
+    }
+    
+    /* 3. 【关键】强制顶部按钮 (Share, GitHub, Menu) 的图标变黑 */
+    header[data-testid="stHeader"] button, 
+    header[data-testid="stHeader"] svg, 
+    header[data-testid="stHeader"] a {
+        color: #000000 !important; /* 文字变黑 */
+        fill: #000000 !important;  /* 图标填充变黑 */
+    }
+    
+    /* 4. 侧边栏背景设置为浅灰，区分主区域 */
     section[data-testid="stSidebar"] {
-        background-color: #f0f2f6;
+        background-color: #f5f7f9; /* 很浅的灰蓝色 */
         color: #000000;
     }
-    /* 强制所有标题和文字变黑 */
-    h1, h2, h3, h4, p, div, span, label, li {
+    
+    /* 5. 强制所有标题、段落、标签变黑 */
+    h1, h2, h3, h4, h5, h6, p, div, span, label, li {
         color: #000000 !important;
     }
-    /* 修复滑块标签颜色 */
-    .stSlider label {
+    
+    /* 6. 修复组件内部文字颜色 (滑块、单选框等) */
+    .stSlider label, .stRadio label, .stMarkdown {
         color: #000000 !important;
     }
-    /* 修复单选框文字 */
-    .stRadio label {
-        color: #000000 !important;
+    
+    /* 7. 让 Streamlit 的加载条也变成显眼的颜色 (可选) */
+    .stProgress > div > div > div > div {
+        background-color: #4CAF50;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -83,13 +100,13 @@ def get_trace_data(c, n, angle, progress):
     pts_orig = get_triangle_CDE(c, angle)
     pts_trans = apply_n_transform(pts_orig, n, progress)
     
-    # 闭合多边形
     plot_orig = np.vstack([pts_orig, pts_orig[0]])
     plot_trans = np.vstack([pts_trans, pts_trans[0]])
     
     is_intersect = check_intersection(pts_trans)
     highlight = is_intersect and (progress > 0.9)
-    de_color = '#FF0000' if highlight else '#008000' # 纯红或纯绿
+    # 颜色代码：#FF0000(红), #008000(绿) - 适配白底
+    de_color = '#FF0000' if highlight else '#008000' 
     de_width = 5 if highlight else 3
     
     return {
@@ -107,7 +124,7 @@ def get_trace_data(c, n, angle, progress):
     }
 
 # ==========================================
-# PART C: 侧边栏
+# PART C: 侧边栏 (默认值定义，防止报错)
 # ==========================================
 with st.sidebar:
     st.header("🎮 演示控制器")
@@ -118,7 +135,7 @@ with st.sidebar:
     )
     st.divider()
     
-    # 初始化默认值
+    # 预设默认值
     c_val, n_val, angle_val = 1.0, 3.0, 180
     current_progress = 1.0
     anim_steps = []
@@ -147,7 +164,7 @@ with st.sidebar:
         anim_var_name = "angle"
 
 # ==========================================
-# PART D: 预计算动画帧
+# PART D: 生成动画帧
 # ==========================================
 frames = []
 for val in anim_steps:
@@ -173,7 +190,7 @@ for val in anim_steps:
         ]
     ))
 
-# 初始数据
+# 初始计算
 start_val = anim_steps[0]
 if anim_var_name == "progress": init_params = (c_val, n_val, angle_val, start_val)
 elif anim_var_name == "c": init_params = (start_val, n_val, angle_val, current_progress)
@@ -182,7 +199,7 @@ elif anim_var_name == "angle": init_params = (c_val, n_val, start_val, current_p
 d0 = get_trace_data(*init_params)
 
 # ==========================================
-# PART E: 绘图与布局 (核心修改处)
+# PART E: 绘图与布局 (印刷风格)
 # ==========================================
 st.title("📐 几何变换全能演示系统")
 
@@ -192,11 +209,11 @@ st.markdown(f"**📊 理论计算：** 当前状态下，使图形相交的 $c$ 
 
 fig = go.Figure(
     data=[
-        # [0] y=x (黑色虚线)
+        # [0] y=x
         go.Scatter(x=[-10, 20], y=[-10, 20], mode='lines', line=dict(color='black', width=1.5, dash='dash'), name='y=x'),
         # [1] 对称轴
         go.Scatter(x=[-10, 20], y=d0['n_line_y'], mode='lines', line=dict(color='blue', dash='dashdot'), name='对称轴'),
-        # [2] c 指示线
+        # [2] c指示线
         go.Scatter(x=d0['c_line_x'], y=[-10, 20], mode='lines', line=dict(color='red', width=1, dash='dot'), showlegend=False),
         # [3] 原像
         go.Scatter(x=d0['orig_x'], y=d0['orig_y'], mode='lines+markers', line=dict(color='#800080', dash='dot'), name='原像'),
@@ -211,15 +228,15 @@ fig = go.Figure(
                    textfont=dict(size=16, color='black'), textposition="bottom right", showlegend=False),
         # [7] D'E'
         go.Scatter(x=d0['de_x'], y=d0['de_y'], mode='lines', line=dict(color=d0['de_color'], width=d0['de_width']), name="D'E'"),
-        # [8] c 标签
+        # [8] c标签
         go.Scatter(x=d0['c_pos'], y=[-0.5], mode='text', text=d0['c_label_text'], textfont=dict(color='red', size=14), showlegend=False)
     ],
     frames=frames
 )
 
-# 布局设置 (这里是强制变白的关键)
+# 布局
 fig.update_layout(
-    # 【关键】强制背景为纯白，不透明
+    # 核心：纯白背景
     paper_bgcolor='rgba(255,255,255,1)', 
     plot_bgcolor='rgba(255,255,255,1)',
     
@@ -228,38 +245,28 @@ fig.update_layout(
     
     xaxis=dict(
         range=[-6, 12], 
-        zeroline=True, zerolinecolor='black', zerolinewidth=2, # 坐标轴线变黑变粗
-        gridcolor='#e0e0e0', gridwidth=1,                      # 网格线深一点的灰
-        tickfont=dict(color='black', size=14),                 # 刻度文字变黑
-        showgrid=True
+        zeroline=True, zerolinecolor='black', zerolinewidth=2,
+        gridcolor='#e0e0e0', gridwidth=1,
+        tickfont=dict(color='black', size=14), showgrid=True
     ),
     yaxis=dict(
         range=[-6, 12], scaleanchor="x", scaleratio=1,
         zeroline=True, zerolinecolor='black', zerolinewidth=2,
         gridcolor='#e0e0e0', gridwidth=1,
-        tickfont=dict(color='black', size=14),
-        showgrid=True
+        tickfont=dict(color='black', size=14), showgrid=True
     ),
     
-    # 图例设置 (白底黑字黑框)
     legend=dict(
-        x=0.01, y=0.99,
-        bgcolor="white",
+        x=0.01, y=0.99, bgcolor="white",
         bordercolor="black", borderwidth=1,
         font=dict(color="black", size=12)
     ),
     
-    # 动画控件
     updatemenus=[dict(
-        type="buttons",
-        showactive=False,
+        type="buttons", showactive=False,
         x=0.05, y=0, xanchor="right", yanchor="top",
         bgcolor="white", bordercolor="black", borderwidth=1, font=dict(color="black"),
-        buttons=[dict(
-            label="▶️ 播放动画",
-            method="animate",
-            args=[None, dict(frame=dict(duration=50, redraw=True), fromcurrent=True)]
-        )]
+        buttons=[dict(label="▶️ 播放动画", method="animate", args=[None, dict(frame=dict(duration=50, redraw=True), fromcurrent=True)])]
     )],
     
     sliders=[dict(
@@ -270,8 +277,7 @@ fig.update_layout(
         ) for v in anim_steps],
         active=0,
         currentvalue=dict(prefix=f"{anim_var_name} : ", font=dict(color="black")),
-        pad=dict(t=0),
-        font=dict(color="black"),
+        pad=dict(t=0), font=dict(color="black"),
         bgcolor="white", bordercolor="lightgray", borderwidth=1
     )]
 )
