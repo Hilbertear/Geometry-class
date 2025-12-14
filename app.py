@@ -2,213 +2,235 @@ import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
 
-# --- 1. 页面配置 (强制宽屏) ---
+# --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="几何变换探究",
+    page_title="n型变换：受限区域探究",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 2. 核心数学逻辑 (与你提供的 Matplotlib 逻辑完全一致) ---
+# --- 2. 核心数学逻辑 ---
+FIXED_N = 3.0
 
 def get_triangle_CDE(c, angle_deg):
-    """计算原始三角形 CDE 的坐标"""
+    """
+    计算变换后的三角形 C'D'E' 坐标
+    """
     theta = np.radians(angle_deg)
-    xc, yc = c, c
-    xd = xc + 2 * np.cos(theta)
-    yd = yc + 2 * np.sin(theta)
-    theta_de = theta - np.pi/2
-    xe = xd + 2 * np.cos(theta_de)
-    ye = yd + 2 * np.sin(theta_de)
-    return np.array([[xc, yc], [xd, yd], [xe, ye]])
+    
+    # 1. C' 的坐标 (变换后)
+    # n型变换公式: x' = x+n, y' = 2n-y
+    # C(c,c) -> C'(c+n, 2n-c)
+    xc_prime = c + FIXED_N
+    yc_prime = 2 * FIXED_N - c
+    
+    # 2. 计算相对位移 (向量)
+    # 原像中: xD = c + 2cos(theta), yD = c + 2sin(theta)
+    # 变换后: xD' = xD + n = c + n + 2cos(theta)
+    #        yD' = 2n - yD = 2n - (c + 2sin(theta)) = (2n-c) - 2sin(theta)
+    # 所以 D' 相对于 C' 的偏移量是 (2cos(theta), -2sin(theta))
+    # 这相当于原向量在y方向取反，或者说是顺时针翻转了
+    
+    # 原始向量 (相对C)
+    vec_CD_x = 2 * np.cos(theta)
+    vec_CD_y = 2 * np.sin(theta)
+    
+    # 题目中 CD=DE=2, CD垂直DE, C,D,E顺时针
+    # E相对于D的向量，是CD向量顺时针旋转90度
+    # 旋转 -90度: x' = y, y' = -x
+    vec_DE_x = vec_CD_y
+    vec_DE_y = -vec_CD_x
+    
+    # E 相对于 C 的向量 = CD + DE
+    vec_CE_x = vec_CD_x + vec_DE_x
+    vec_CE_y = vec_CD_y + vec_DE_y
+    
+    # 3. 应用变换 (翻折+平移) 到相对向量上
+    # 变换规律：x方向不变，y方向取反 (因为 y' = 2n - y，线性部分斜率为-1)
+    
+    # D' 绝对坐标
+    D_prime_x = xc_prime + vec_CD_x
+    D_prime_y = yc_prime - vec_CD_y # 注意这里减号，体现翻折
+    
+    # E' 绝对坐标
+    E_prime_x = xc_prime + vec_CE_x
+    E_prime_y = yc_prime - vec_CE_y # 注意这里减号
+    
+    return np.array([[xc_prime, yc_prime], [D_prime_x, D_prime_y], [E_prime_x, E_prime_y]])
 
-def apply_n_transform(points, n, progress):
+def get_valid_sector_shape(c_val):
     """
-    n型变换逻辑:
-    0~0.5: 关于 y=n 翻折 (对称)
-    0.5~1.0: 向右平移 n
+    计算满足条件 xD <= c 且 xE <= c 的扇环区域形状
+    数学推导：
+    xD <= c => 2cos(theta) <= 0 => theta in [90, 270]
+    xE <= c => xD + 2sin(theta) <= c => 2cos+2sin <= 0 => sin(theta+45)<=0 => theta in [135, 315]
+    交集: theta in [135, 270]
     """
-    trans_points = points.copy()
-    if progress <= 0.5:
-        # 阶段一：翻折 (对称)
-        t = progress / 0.5
-        # y' = y(1-t) + (2n-y)t
-        trans_points[:, 1] = points[:, 1] * (1 - t) + (2 * n - points[:, 1]) * t
-    else:
-        # 阶段二：平移
-        trans_points[:, 1] = 2 * n - points[:, 1] # 确保翻折完成
-        t = (progress - 0.5) / 0.5
-        trans_points[:, 0] = points[:, 0] + t * n
-    return trans_points
-
-def check_intersection(points):
-    """判断线段 D'E' 是否与 y=x 相交 (异号即相交)"""
-    D_prime = points[1]
-    E_prime = points[2]
-    # 直线方程 f(x,y) = y - x. 代入两点坐标
-    val_D = D_prime[1] - D_prime[0]
-    val_E = E_prime[1] - E_prime[0]
-    return (val_D * val_E <= 0)
-
-def calc_c_range(angle_deg, n):
-    """计算 c 的可行范围"""
-    base_tri = get_triangle_CDE(0, angle_deg)
-    sum_D = base_tri[1, 0] + base_tri[1, 1]
-    sum_E = base_tri[2, 0] + base_tri[2, 1]
-    c1 = (n - sum_D) / 2
-    c2 = (n - sum_E) / 2
-    return min(c1, c2), max(c1, c2)
-
-# --- 3. 侧边栏控制 ---
-with st.sidebar:
-    st.header("🎛️ 探究控制台")
-    st.info("💡 提示：先将进度条拖到最右侧，再调整参数观察相交情况。")
+    xc_prime = c_val + FIXED_N
+    yc_prime = 2 * FIXED_N - c_val
     
-    # 动画进度
-    progress = st.slider("▶️ 变换进度 (0.0=原图, 0.5=对称, 1.0=完成)", 0.0, 1.0, 0.0, 0.01)
+    # 有效角度范围 (原像角度)
+    valid_angles = np.linspace(135, 270, 50)
+    thetas = np.radians(valid_angles)
     
-    st.divider()
+    # 构造 D' 的轨迹 (内弧)
+    # D'x = xc' + 2cos(theta)
+    # D'y = yc' - 2sin(theta)
+    d_x = xc_prime + 2 * np.cos(thetas)
+    d_y = yc_prime - 2 * np.sin(thetas)
     
-    # 核心参数
-    c_val = st.slider("🅰️ 点 C 位置 (c)", -5.0, 8.0, 1.0, 0.1)
-    n_val = st.slider("🅱️ 参数 n (对称轴 y=n)", 1.0, 5.0, 3.0, 0.1)
-    angle_val = st.slider("🔄 旋转角度", 0, 360, 180, 5)
+    # 构造 E' 的轨迹 (外弧)
+    # Ex_orig = 2cos + 2sin
+    # Ey_orig = 2sin - 2cos
+    # E'x = xc' + (2cos + 2sin)
+    # E'y = yc' - (2sin - 2cos) = yc' + 2cos - 2sin
+    e_x = xc_prime + (2 * np.cos(thetas) + 2 * np.sin(thetas))
+    e_y = yc_prime + (2 * np.cos(thetas) - 2 * np.sin(thetas))
+    
+    # 拼接成闭合多边形: E'正向 -> D'反向 -> 回到起点
+    poly_x = np.concatenate([e_x, d_x[::-1], [e_x[0]]])
+    poly_y = np.concatenate([e_y, d_y[::-1], [e_y[0]]])
+    
+    return poly_x, poly_y
 
-# --- 4. 数据计算 ---
-pts_orig = get_triangle_CDE(c_val, angle_val)
-pts_trans = apply_n_transform(pts_orig, n_val, progress)
+# --- 3. 动画帧生成 ---
+c_start, c_end = -2.0, 6.0
+steps = 80
+c_values = np.linspace(c_start, c_end, steps)
+frames = []
 
-# 闭合多边形用于画图
-def close_polygon(pts):
-    return np.vstack([pts, pts[0]])
+for val in c_values:
+    # 1. 计算当前位置的扇环
+    sx, sy = get_valid_sector_shape(val)
+    
+    # 2. 计算当前位置的 C'
+    cx = val + FIXED_N
+    cy = 2 * FIXED_N - val
+    
+    # 3. 计算示例三角形 (用于演示一个具体的 D'E')
+    # 选一个在有效范围内的角度，比如 180度
+    demo_tri = get_triangle_CDE(val, 180) 
+    
+    frames.append(go.Frame(
+        name=f"{val:.2f}",
+        data=[
+            # [2] 扇环区域更新
+            go.Scatter(x=sx, y=sy),
+            # [3] C' 更新
+            go.Scatter(x=[cx], y=[cy]),
+            # [4] 示例三角形更新
+            go.Scatter(x=np.vstack([demo_tri, demo_tri[0]])[:,0], 
+                       y=np.vstack([demo_tri, demo_tri[0]])[:,1]),
+            # [5] c值标签更新
+            go.Scatter(x=[cx], text=[f"c={val:.1f}"])
+        ]
+    ))
 
-plot_orig = close_polygon(pts_orig)
-plot_trans = close_polygon(pts_trans)
+# 初始数据 (第一帧)
+init_c = c_values[0]
+sx_0, sy_0 = get_valid_sector_shape(init_c)
+cx_0 = init_c + FIXED_N
+cy_0 = 2 * FIXED_N - init_c
+tri_0 = get_triangle_CDE(init_c, 180)
 
-# 判断逻辑
-is_valid = (pts_orig[1, 0] <= c_val + 1e-5) and (pts_orig[2, 0] <= c_val + 1e-5)
-has_intersect = check_intersection(pts_trans)
-c_min, c_max = calc_c_range(angle_val, n_val)
+# --- 4. 绘图主程序 ---
+st.title("🎯 n型变换：受限区域与动态扫描")
 
-# --- 5. 显示状态信息 ---
-st.title("📐 n型变换与交点探究 (教室模式)")
+# 数学原理解析
+with st.expander("查看区域限制的数学推导"):
+    st.latex(r"\text{由 } x_D \le c \implies 2\cos\theta \le 0 \implies 90^\circ \le \theta \le 270^\circ")
+    st.latex(r"\text{由 } x_E \le c \implies 2\cos\theta + 2\sin\theta \le 0 \implies 135^\circ \le \theta \le 315^\circ")
+    st.latex(r"\text{取交集：} \theta \in [135^\circ, 270^\circ]")
+    st.write("图中 **紫色扇环** 即为该角度范围对应的 $D'E'$ 扫掠区域。")
 
-col1, col2 = st.columns(2)
-with col1:
-    if is_valid:
-        st.success(f"✅ 原始图形：满足 xd, xe ≤ c")
-    else:
-        st.error(f"❌ 原始图形：不合题意 (须 xd, xe ≤ c)")
+fig = go.Figure(
+    data=[
+        # --- 静态背景层 ---
+        # [0] y=x
+        go.Scatter(x=[-10, 20], y=[-10, 20], mode='lines', 
+                   line=dict(color='black', width=1.5, dash='dash'), name='y=x'),
+        # [1] y=3 (n=3)
+        go.Scatter(x=[-10, 20], y=[3, 3], mode='lines', 
+                   line=dict(color='blue', width=2, dash='dashdot'), name='y=3 (对称轴)'),
+        
+        # --- 动态层 (需在 frames 中更新) ---
+        # [2] 有效扇环区域
+        go.Scatter(
+            x=sx_0, y=sy_0,
+            fill='toself', fillcolor='rgba(128, 0, 128, 0.3)', # 紫色半透明
+            line=dict(color='purple', width=1),
+            name="符合题意的区域"
+        ),
+        
+        # [3] 中心点 C'
+        go.Scatter(
+            x=[cx_0], y=[cy_0], mode='markers',
+            marker=dict(size=8, color='red'),
+            name="C'"
+        ),
+        
+        # [4] 示例三角形 (取 theta=180度)
+        go.Scatter(
+            x=np.vstack([tri_0, tri_0[0]])[:,0],
+            y=np.vstack([tri_0, tri_0[0]])[:,1],
+            mode='lines', line=dict(color='green', width=2),
+            name="示例 D'E' (θ=180°)"
+        ),
+        
+        # [5] c值文字标签
+        go.Scatter(
+            x=[cx_0], y=[cy_0 - 0.8], mode='text',
+            text=[f"c={init_c:.1f}"], textfont=dict(color='red', size=14),
+            showlegend=False
+        )
+    ],
+    frames=frames
+)
 
-with col2:
-    if progress >= 0.99:
-        if has_intersect:
-            st.error(f"🔴 状态：D'E' 与 y=x **相交**")
-        else:
-            st.info(f"🔵 状态：D'E' 与 y=x **不相交**")
-    else:
-        st.warning("⚠️ 变换进行中... (请拖动进度条到最右侧)")
-
-st.markdown(f"**📊 理论计算：** 当前角度下，使变换后相交的 $c$ 的范围是 **$[{c_min:.2f}, {c_max:.2f}]$**")
-
-# --- 6. Plotly 画图 (强制白底黑字) ---
-fig = go.Figure()
-
-# [图层1] 辅助线 y=x
-fig.add_trace(go.Scatter(
-    x=[-10, 20], y=[-10, 20],
-    mode='lines', name='y=x',
-    line=dict(color='black', width=1, dash='dash'), # 黑色虚线
-    hoverinfo='skip'
-))
-
-# [图层2] 对称轴 y=n
-fig.add_trace(go.Scatter(
-    x=[-10, 20], y=[n_val, n_val],
-    mode='lines', name=f'对称轴 y={n_val}',
-    line=dict(color='blue', width=2, dash='dashdot'),
-    hoverinfo='skip'
-))
-
-# [图层3] 原始三角形 (紫色虚线)
-fig.add_trace(go.Scatter(
-    x=plot_orig[:, 0], y=plot_orig[:, 1],
-    mode='lines+markers+text',
-    name='原三角形',
-    line=dict(color='purple', width=2, dash='dot'),
-    marker=dict(size=6, color='purple'),
-    text=["<b>C</b>", "<b>D</b>", "<b>E</b>", ""], 
-    textposition="top left",
-    textfont=dict(size=16, color='purple')
-))
-
-# [图层4] 变换后三角形 (绿色填充)
-fig.add_trace(go.Scatter(
-    x=plot_trans[:, 0], y=plot_trans[:, 1],
-    mode='lines+markers+text',
-    name='变换后三角形',
-    fill='toself', fillcolor='rgba(0, 200, 100, 0.3)',
-    line=dict(color='green', width=3),
-    marker=dict(size=8, color='green'),
-    text=["<b>C'</b>", "<b>D'</b>", "<b>E'</b>", ""], 
-    textposition="bottom right",
-    textfont=dict(size=16, color='darkgreen')
-))
-
-# [图层5] D'E' 线段高亮
-de_color = 'red' if has_intersect and progress > 0.9 else 'green'
-fig.add_trace(go.Scatter(
-    x=[pts_trans[1,0], pts_trans[2,0]], 
-    y=[pts_trans[1,1], pts_trans[2,1]],
-    mode='lines', name="D'E'线段",
-    line=dict(color=de_color, width=4),
-    hoverinfo='skip'
-))
-
-# --- 7. 画布布局 (教科书风格) ---
+# 布局设置 (白板风格)
 fig.update_layout(
-    # 强制白色背景
-    paper_bgcolor='white',
-    plot_bgcolor='white',
-    template="simple_white",
+    # 背景与字体
+    paper_bgcolor='white', plot_bgcolor='white',
+    font=dict(color='black'),
     
     height=700,
+    title=dict(text="<b>点击下方播放键 ▶️ 观察扇环移动与相交</b>", x=0.5),
     
-    # 标题
-    title=dict(
-        text="<b>几何变换平面直角坐标系</b>",
-        font=dict(size=22, color="black"),
-        x=0.5
-    ),
-    
-    # X轴设置
     xaxis=dict(
-        title=dict(text="<b>x 轴</b>", font=dict(size=18, color="black")),
-        range=[-6, 15], 
-        zeroline=True, zerolinewidth=2, zerolinecolor='black', # 坐标轴线加粗变黑
-        gridcolor='lightgray', gridwidth=1, showgrid=True,
-        tickfont=dict(size=14, color="black")
+        range=[-2, 14], scaleratio=1, scaleanchor="y",
+        zeroline=True, zerolinecolor='black', gridcolor='#e0e0e0', showgrid=True,
+        title=dict(text="x", font=dict(color="black")),
+        tickfont=dict(color="black")
     ),
-    
-    # Y轴设置
     yaxis=dict(
-        title=dict(text="<b>y 轴</b>", font=dict(size=18, color="black")),
-        range=[-6, 12], 
-        scaleanchor="x", scaleratio=1,
-        zeroline=True, zerolinewidth=2, zerolinecolor='black',
-        gridcolor='lightgray', gridwidth=1, showgrid=True,
-        tickfont=dict(size=14, color="black")
+        range=[-2, 10], 
+        zeroline=True, zerolinecolor='black', gridcolor='#e0e0e0', showgrid=True,
+        title=dict(text="y", font=dict(color="black")),
+        tickfont=dict(color="black")
     ),
     
-    # 图例设置
-    legend=dict(
-        x=0.01, y=0.99,
-        bgcolor="rgba(255, 255, 255, 0.9)",
-        bordercolor="black", borderwidth=1,
-        font=dict(size=14, color="black")
-    ),
+    # 动画控件
+    updatemenus=[dict(
+        type="buttons", showactive=False,
+        x=0.1, y=0, xanchor="right", yanchor="top",
+        bgcolor="white", bordercolor="black", borderwidth=1, font=dict(color="black"),
+        buttons=[dict(
+            label="▶️ 播放连续动画",
+            method="animate",
+            args=[None, dict(frame=dict(duration=20, redraw=True), fromcurrent=True)]
+        )]
+    )],
     
-    dragmode="pan"
+    sliders=[dict(
+        steps=[dict(
+            method="animate",
+            args=[[f"{v:.2f}"], dict(mode="immediate", frame=dict(duration=0, redraw=True))],
+            label=f"{v:.1f}"
+        ) for v in c_values],
+        currentvalue=dict(prefix="c = ", font=dict(color="black")),
+        active=0,
+        bgcolor="white", bordercolor="lightgray", borderwidth=1, font=dict(color="black")
+    )]
 )
 
 st.plotly_chart(fig, use_container_width=True)
