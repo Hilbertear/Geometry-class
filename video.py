@@ -4,183 +4,198 @@ import plotly.graph_objects as go
 
 # --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="n型变换：环形区域探究",
+    page_title="n型变换：受限区域探究",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # --- 2. 核心数学逻辑 ---
-# 固定 n=3
 FIXED_N = 3.0
 
-def get_circle_points(center_x, center_y, radius, steps=100):
-    """生成圆的坐标点"""
-    theta = np.linspace(0, 2*np.pi, steps)
-    x = center_x + radius * np.cos(theta)
-    y = center_y + radius * np.sin(theta)
-    return x, y
-
-def get_triangle_CDE(c, angle_deg, n):
+def get_triangle_CDE(c, angle_deg):
+    """
+    计算变换后的三角形 C'D'E' 坐标
+    """
     theta = np.radians(angle_deg)
-    # n型变换后的 C' 坐标: (c+n, 2n-c)
-    xc_prime = c + n
-    yc_prime = 2 * n - c
     
-    # 相对于 C' 的旋转 (注意：变换后的长度不变，形状不变)
-    # CD=2, DE=2, CE=2sqrt(2). D'E' 也就是变换后的相应点
-    # D' 相对于 C' 的位置
-    xd_rel = 2 * np.cos(theta)
-    yd_rel = 2 * np.sin(theta)
+    # 1. C' 的坐标 (变换后)
+    # n型变换公式: x' = x+n, y' = 2n-y
+    # C(c,c) -> C'(c+n, 2n-c)
+    xc_prime = c + FIXED_N
+    yc_prime = 2 * FIXED_N - c
     
-    # E' 相对于 C' 的位置 (顺时针旋转90度后，长度延伸到 2sqrt(2)? 不，题目是 CD=DE=2)
-    # 也就是 E 在 D 的基础上再走一段。
-    # 向量 CD = (2cos, 2sin). 向量 DE 垂直于 CD 且长度为 2.
-    # 顺时针排列 C, D, E -> E 在 D 的 "右侧" (相对于 CD 方向顺时针转90度)
-    # 向量 DE 方向: theta - 90度
-    theta_de = theta - np.pi/2
-    xe_rel = xd_rel + 2 * np.cos(theta_de)
-    ye_rel = yd_rel + 2 * np.sin(theta_de)
+    # 2. 计算相对位移 (向量)
+    # 原像中: xD = c + 2cos(theta), yD = c + 2sin(theta)
+    # 变换后: xD' = xD + n = c + n + 2cos(theta)
+    #        yD' = 2n - yD = 2n - (c + 2sin(theta)) = (2n-c) - 2sin(theta)
+    # 所以 D' 相对于 C' 的偏移量是 (2cos(theta), -2sin(theta))
+    # 这相当于原向量在y方向取反，或者说是顺时针翻转了
     
-    # 绝对坐标
-    C_prime = np.array([xc_prime, yc_prime])
-    D_prime = C_prime + np.array([xd_rel, yd_rel])
-    E_prime = C_prime + np.array([xe_rel, ye_rel])
+    # 原始向量 (相对C)
+    vec_CD_x = 2 * np.cos(theta)
+    vec_CD_y = 2 * np.sin(theta)
     
-    return np.array([C_prime, D_prime, E_prime])
-
-# --- 3. 侧边栏控制 ---
-with st.sidebar:
-    st.header("🎮 探究控制台")
-    st.info("当前固定 $n=3$")
+    # 题目中 CD=DE=2, CD垂直DE, C,D,E顺时针
+    # E相对于D的向量，是CD向量顺时针旋转90度
+    # 旋转 -90度: x' = y, y' = -x
+    vec_DE_x = vec_CD_y
+    vec_DE_y = -vec_CD_x
     
-    # 唯一的自由度 c
-    c_val = st.slider("🅰️ 拖动点 C' (改变参数 c)", -5.0, 5.0, 1.0, 0.1)
+    # E 相对于 C 的向量 = CD + DE
+    vec_CE_x = vec_CD_x + vec_DE_x
+    vec_CE_y = vec_CD_y + vec_DE_y
     
-    st.divider()
+    # 3. 应用变换 (翻折+平移) 到相对向量上
+    # 变换规律：x方向不变，y方向取反 (因为 y' = 2n - y，线性部分斜率为-1)
     
-    st.markdown("### 辅助设置")
-    # 虽然只保留一个自由度，但为了演示"扫过"的效果，保留角度滑块作为演示辅助，或者自动播放
-    show_sample_tri = st.checkbox("显示示例三角形 D'E'", value=True)
-    angle_val = st.slider("示例三角形旋转角度", 0, 360, 45, 5, disabled=not show_sample_tri)
+    # D' 绝对坐标
+    D_prime_x = xc_prime + vec_CD_x
+    D_prime_y = yc_prime - vec_CD_y # 注意这里减号，体现翻折
+    
+    # E' 绝对坐标
+    E_prime_x = xc_prime + vec_CE_x
+    E_prime_y = yc_prime - vec_CE_y # 注意这里减号
+    
+    return np.array([[xc_prime, yc_prime], [D_prime_x, D_prime_y], [E_prime_x, E_prime_y]])
 
-# --- 4. 计算绘图数据 ---
-# C' 坐标
-cx_prime = c_val + FIXED_N
-cy_prime = 2 * FIXED_N - c_val
+def get_valid_sector_shape(c_val):
+    """
+    计算满足条件 xD <= c 且 xE <= c 的扇环区域形状
+    数学推导：
+    xD <= c => 2cos(theta) <= 0 => theta in [90, 270]
+    xE <= c => xD + 2sin(theta) <= c => 2cos+2sin <= 0 => sin(theta+45)<=0 => theta in [135, 315]
+    交集: theta in [135, 270]
+    """
+    xc_prime = c_val + FIXED_N
+    yc_prime = 2 * FIXED_N - c_val
+    
+    # 有效角度范围 (原像角度)
+    valid_angles = np.linspace(135, 270, 50)
+    thetas = np.radians(valid_angles)
+    
+    # 构造 D' 的轨迹 (内弧)
+    # D'x = xc' + 2cos(theta)
+    # D'y = yc' - 2sin(theta)
+    d_x = xc_prime + 2 * np.cos(thetas)
+    d_y = yc_prime - 2 * np.sin(thetas)
+    
+    # 构造 E' 的轨迹 (外弧)
+    # Ex_orig = 2cos + 2sin
+    # Ey_orig = 2sin - 2cos
+    # E'x = xc' + (2cos + 2sin)
+    # E'y = yc' - (2sin - 2cos) = yc' + 2cos - 2sin
+    e_x = xc_prime + (2 * np.cos(thetas) + 2 * np.sin(thetas))
+    e_y = yc_prime + (2 * np.cos(thetas) - 2 * np.sin(thetas))
+    
+    # 拼接成闭合多边形: E'正向 -> D'反向 -> 回到起点
+    poly_x = np.concatenate([e_x, d_x[::-1], [e_x[0]]])
+    poly_y = np.concatenate([e_y, d_y[::-1], [e_y[0]]])
+    
+    return poly_x, poly_y
 
-# 半径定义
-r_inner = 2.0               # D' 的轨迹半径 (|CD|)
-r_outer = np.sqrt(2**2 + 2**2) # E' 的轨迹半径 (|CE| = 2sqrt(2) approx 2.828)
+# --- 3. 动画帧生成 ---
+c_start, c_end = -2.0, 6.0
+steps = 80
+c_values = np.linspace(c_start, c_end, steps)
+frames = []
 
-# 生成圆环填充数据 (利用 Plotly 的 path 技巧实现带孔多边形)
-theta = np.linspace(0, 2*np.pi, 120)
-# 外圆 (顺时针)
-x_out = cx_prime + r_outer * np.cos(theta)
-y_out = cy_prime + r_outer * np.sin(theta)
-# 内圆 (逆时针 - 用于挖洞)
-x_in = cx_prime + r_inner * np.cos(theta[::-1])
-y_in = cy_prime + r_inner * np.sin(theta[::-1])
-# 合并路径
-x_poly = np.concatenate([x_out, x_in])
-y_poly = np.concatenate([y_out, y_in])
-
-# 计算距离 y=x 的距离
-dist_to_line = abs(cx_prime - cy_prime) / np.sqrt(2)
-# 判断相交状态
-# 环形区域与直线相交条件：距离 <= 外半径
-# D'E'线段与直线相交条件：距离 在 [内半径, 外半径] 之间? 
-# 准确说是：圆环与直线有交集。
-intersect_status = "无交点"
-status_color = "gray"
-if dist_to_line > r_outer:
-    intersect_status = "相离 (无解)"
-    status_color = "red"
-elif dist_to_line < r_inner:
-    intersect_status = "包含直线 (可能无解，因为线段在两圆之间)" 
-    # 注意：线段D'E'是连接内圆和外圆的弦。如果直线穿过内圆，线段必然会穿过直线。
-    status_color = "orange"
-else:
-    intersect_status = "✅ 存在交点 (有解)"
-    status_color = "green"
-
-# 计算示例三角形
-tri_points = get_triangle_CDE(c_val, angle_val, FIXED_N)
-# 闭合用于画图
-tri_plot = np.vstack([tri_points, tri_points[0]])
-
-# --- 5. 绘图 ---
-st.title("🎯 n型变换：D'E' 扫过区域探究")
-st.markdown(f"""
-**当前状态：** $n=3, c={c_val:.1f}$  
-**中心点 $C'$ 坐标：** $({cx_prime:.1f}, {cy_prime:.1f})$  
-**$C'$ 到 $y=x$ 距离：** ${dist_to_line:.3f}$ (范围参考: $[2, 2\sqrt{{2}}] \\approx [2, 2.828]$)  
-**状态判定：** :{status_color}[**{intersect_status}**]
-""")
-
-fig = go.Figure()
-
-# [图层0] y=x (黑色虚线)
-fig.add_trace(go.Scatter(
-    x=[-10, 20], y=[-10, 20], mode='lines', 
-    line=dict(color='black', width=2, dash='dash'), name='y=x'
-))
-
-# [图层1] 扫过的圆环区域 (紫色半透明)
-fig.add_trace(go.Scatter(
-    x=x_poly, y=y_poly,
-    fill='toself', 
-    fillcolor='rgba(128, 0, 128, 0.2)', # 紫色半透明
-    line=dict(color='rgba(0,0,0,0)'),   # 无边框
-    name="D'E' 扫过区域",
-    hoverinfo='skip'
-))
-
-# [图层2] 内圆 (D' 轨迹)
-fig.add_trace(go.Scatter(
-    x=x_in, y=y_in, mode='lines',
-    line=dict(color='purple', width=1, dash='dot'),
-    name="D' 轨迹圆 (r=2)"
-))
-
-# [图层3] 外圆 (E' 轨迹)
-fig.add_trace(go.Scatter(
-    x=x_out, y=y_out, mode='lines',
-    line=dict(color='purple', width=2),
-    name="E' 轨迹圆 (r=2√2)"
-))
-
-# [图层4] 中心点 C'
-fig.add_trace(go.Scatter(
-    x=[cx_prime], y=[cy_prime], mode='markers+text',
-    marker=dict(size=10, color='red'),
-    text=["<b>C'</b>"], textposition="middle center", textfont=dict(color='white'),
-    name="中心 C'"
-))
-
-# [图层5] 示例三角形 (可选)
-if show_sample_tri:
-    # 填充三角形
-    fig.add_trace(go.Scatter(
-        x=tri_plot[:,0], y=tri_plot[:,1],
-        mode='lines', fill='toself', fillcolor='rgba(0, 200, 100, 0.3)',
-        line=dict(color='green', width=2),
-        name="当前示例三角形"
-    ))
-    # D'E' 线段高亮
-    fig.add_trace(go.Scatter(
-        x=[tri_points[1,0], tri_points[2,0]], 
-        y=[tri_points[1,1], tri_points[2,1]],
-        mode='lines+markers+text',
-        marker=dict(size=6, color='darkgreen'),
-        line=dict(color='darkgreen', width=4),
-        text=["<b>D'</b>", "<b>E'</b>"], textposition="top center", textfont=dict(size=14, color='darkgreen'),
-        name="D'E' 线段"
+for val in c_values:
+    # 1. 计算当前位置的扇环
+    sx, sy = get_valid_sector_shape(val)
+    
+    # 2. 计算当前位置的 C'
+    cx = val + FIXED_N
+    cy = 2 * FIXED_N - val
+    
+    # 3. 计算示例三角形 (用于演示一个具体的 D'E')
+    # 选一个在有效范围内的角度，比如 180度
+    demo_tri = get_triangle_CDE(val, 180) 
+    
+    frames.append(go.Frame(
+        name=f"{val:.2f}",
+        data=[
+            # [2] 扇环区域更新
+            go.Scatter(x=sx, y=sy),
+            # [3] C' 更新
+            go.Scatter(x=[cx], y=[cy]),
+            # [4] 示例三角形更新
+            go.Scatter(x=np.vstack([demo_tri, demo_tri[0]])[:,0], 
+                       y=np.vstack([demo_tri, demo_tri[0]])[:,1]),
+            # [5] c值标签更新
+            go.Scatter(x=[cx], text=[f"c={val:.1f}"])
+        ]
     ))
 
-# 布局设置 (保持白板风格)
+# 初始数据 (第一帧)
+init_c = c_values[0]
+sx_0, sy_0 = get_valid_sector_shape(init_c)
+cx_0 = init_c + FIXED_N
+cy_0 = 2 * FIXED_N - init_c
+tri_0 = get_triangle_CDE(init_c, 180)
+
+# --- 4. 绘图主程序 ---
+st.title("🎯 n型变换：受限区域与动态扫描")
+
+# 数学原理解析
+with st.expander("查看区域限制的数学推导"):
+    st.latex(r"\text{由 } x_D \le c \implies 2\cos\theta \le 0 \implies 90^\circ \le \theta \le 270^\circ")
+    st.latex(r"\text{由 } x_E \le c \implies 2\cos\theta + 2\sin\theta \le 0 \implies 135^\circ \le \theta \le 315^\circ")
+    st.latex(r"\text{取交集：} \theta \in [135^\circ, 270^\circ]")
+    st.write("图中 **紫色扇环** 即为该角度范围对应的 $D'E'$ 扫掠区域。")
+
+fig = go.Figure(
+    data=[
+        # --- 静态背景层 ---
+        # [0] y=x
+        go.Scatter(x=[-10, 20], y=[-10, 20], mode='lines', 
+                   line=dict(color='black', width=1.5, dash='dash'), name='y=x'),
+        # [1] y=3 (n=3)
+        go.Scatter(x=[-10, 20], y=[3, 3], mode='lines', 
+                   line=dict(color='blue', width=2, dash='dashdot'), name='y=3 (对称轴)'),
+        
+        # --- 动态层 (需在 frames 中更新) ---
+        # [2] 有效扇环区域
+        go.Scatter(
+            x=sx_0, y=sy_0,
+            fill='toself', fillcolor='rgba(128, 0, 128, 0.3)', # 紫色半透明
+            line=dict(color='purple', width=1),
+            name="符合题意的区域"
+        ),
+        
+        # [3] 中心点 C'
+        go.Scatter(
+            x=[cx_0], y=[cy_0], mode='markers',
+            marker=dict(size=8, color='red'),
+            name="C'"
+        ),
+        
+        # [4] 示例三角形 (取 theta=180度)
+        go.Scatter(
+            x=np.vstack([tri_0, tri_0[0]])[:,0],
+            y=np.vstack([tri_0, tri_0[0]])[:,1],
+            mode='lines', line=dict(color='green', width=2),
+            name="示例 D'E' (θ=180°)"
+        ),
+        
+        # [5] c值文字标签
+        go.Scatter(
+            x=[cx_0], y=[cy_0 - 0.8], mode='text',
+            text=[f"c={init_c:.1f}"], textfont=dict(color='red', size=14),
+            showlegend=False
+        )
+    ],
+    frames=frames
+)
+
+# 布局设置 (白板风格)
 fig.update_layout(
+    # 背景与字体
     paper_bgcolor='white', plot_bgcolor='white',
+    font=dict(color='black'),
+    
     height=700,
+    title=dict(text="<b>点击下方播放键 ▶️ 观察扇环移动与相交</b>", x=0.5),
+    
     xaxis=dict(
         range=[-2, 14], scaleratio=1, scaleanchor="y",
         zeroline=True, zerolinecolor='black', gridcolor='#e0e0e0', showgrid=True,
@@ -193,7 +208,29 @@ fig.update_layout(
         title=dict(text="y", font=dict(color="black")),
         tickfont=dict(color="black")
     ),
-    legend=dict(x=0.01, y=0.99, bgcolor="rgba(255,255,255,0.8)", font=dict(color="black"))
+    
+    # 动画控件
+    updatemenus=[dict(
+        type="buttons", showactive=False,
+        x=0.1, y=0, xanchor="right", yanchor="top",
+        bgcolor="white", bordercolor="black", borderwidth=1, font=dict(color="black"),
+        buttons=[dict(
+            label="▶️ 播放连续动画",
+            method="animate",
+            args=[None, dict(frame=dict(duration=20, redraw=True), fromcurrent=True)]
+        )]
+    )],
+    
+    sliders=[dict(
+        steps=[dict(
+            method="animate",
+            args=[[f"{v:.2f}"], dict(mode="immediate", frame=dict(duration=0, redraw=True))],
+            label=f"{v:.1f}"
+        ) for v in c_values],
+        currentvalue=dict(prefix="c = ", font=dict(color="black")),
+        active=0,
+        bgcolor="white", bordercolor="lightgray", borderwidth=1, font=dict(color="black")
+    )]
 )
 
 st.plotly_chart(fig, use_container_width=True)
