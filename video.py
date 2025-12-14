@@ -4,255 +4,196 @@ import plotly.graph_objects as go
 
 # --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="几何变换全能演示(最终修正版)",
+    page_title="n型变换：环形区域探究",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# 【注意】我删除了之前所有的 CSS 样式代码。
-# 现在，网页会自动跟随你的系统设置（深色模式），文字会自动变亮。
-# 只有下面的 Plotly 图表会被强制画成白底。
+# --- 2. 核心数学逻辑 ---
+# 固定 n=3
+FIXED_N = 3.0
 
-# ==========================================
-# PART A: 数学核心逻辑 (保持不变)
-# ==========================================
-def get_triangle_CDE(c, angle_deg):
+def get_circle_points(center_x, center_y, radius, steps=100):
+    """生成圆的坐标点"""
+    theta = np.linspace(0, 2*np.pi, steps)
+    x = center_x + radius * np.cos(theta)
+    y = center_y + radius * np.sin(theta)
+    return x, y
+
+def get_triangle_CDE(c, angle_deg, n):
     theta = np.radians(angle_deg)
-    xc, yc = c, c
-    xd = xc + 2 * np.cos(theta)
-    yd = yc + 2 * np.sin(theta)
+    # n型变换后的 C' 坐标: (c+n, 2n-c)
+    xc_prime = c + n
+    yc_prime = 2 * n - c
+    
+    # 相对于 C' 的旋转 (注意：变换后的长度不变，形状不变)
+    # CD=2, DE=2, CE=2sqrt(2). D'E' 也就是变换后的相应点
+    # D' 相对于 C' 的位置
+    xd_rel = 2 * np.cos(theta)
+    yd_rel = 2 * np.sin(theta)
+    
+    # E' 相对于 C' 的位置 (顺时针旋转90度后，长度延伸到 2sqrt(2)? 不，题目是 CD=DE=2)
+    # 也就是 E 在 D 的基础上再走一段。
+    # 向量 CD = (2cos, 2sin). 向量 DE 垂直于 CD 且长度为 2.
+    # 顺时针排列 C, D, E -> E 在 D 的 "右侧" (相对于 CD 方向顺时针转90度)
+    # 向量 DE 方向: theta - 90度
     theta_de = theta - np.pi/2
-    xe = xd + 2 * np.cos(theta_de)
-    ye = yd + 2 * np.sin(theta_de)
-    return np.array([[xc, yc], [xd, yd], [xe, ye]])
-
-def apply_n_transform(points, n, progress):
-    trans_points = points.copy()
-    if progress <= 0.5:
-        t = progress / 0.5
-        trans_points[:, 1] = points[:, 1] * (1 - t) + (2 * n - points[:, 1]) * t
-    else:
-        trans_points[:, 1] = 2 * n - points[:, 1]
-        t = (progress - 0.5) / 0.5
-        trans_points[:, 0] = points[:, 0] + t * n
-    return trans_points
-
-def check_intersection(points):
-    D_prime = points[1]
-    E_prime = points[2]
-    val_D = D_prime[1] - D_prime[0]
-    val_E = E_prime[1] - E_prime[0]
-    return (val_D * val_E <= 0)
-
-def calc_c_range(angle_deg, n):
-    base_tri = get_triangle_CDE(0, angle_deg)
-    sum_D = base_tri[1, 0] + base_tri[1, 1]
-    sum_E = base_tri[2, 0] + base_tri[2, 1]
-    c1 = (n - sum_D) / 2
-    c2 = (n - sum_E) / 2
-    return min(c1, c2), max(c1, c2)
-
-# ==========================================
-# PART B: 通用绘图数据生成器
-# ==========================================
-def get_trace_data(c, n, angle, progress):
-    pts_orig = get_triangle_CDE(c, angle)
-    pts_trans = apply_n_transform(pts_orig, n, progress)
+    xe_rel = xd_rel + 2 * np.cos(theta_de)
+    ye_rel = yd_rel + 2 * np.sin(theta_de)
     
-    plot_orig = np.vstack([pts_orig, pts_orig[0]])
-    plot_trans = np.vstack([pts_trans, pts_trans[0]])
+    # 绝对坐标
+    C_prime = np.array([xc_prime, yc_prime])
+    D_prime = C_prime + np.array([xd_rel, yd_rel])
+    E_prime = C_prime + np.array([xe_rel, ye_rel])
     
-    is_intersect = check_intersection(pts_trans)
-    highlight = is_intersect and (progress > 0.9)
-    # 颜色：红/绿
-    de_color = '#FF0000' if highlight else '#008000' 
-    de_width = 5 if highlight else 3
-    
-    return {
-        "n_line_y": [n, n],
-        "c_line_x": [c, c],
-        "orig_x": plot_orig[:, 0], "orig_y": plot_orig[:, 1],
-        "txt_orig_x": [pts_orig[0,0], pts_orig[1,0], pts_orig[2,0]],
-        "txt_orig_y": [pts_orig[0,1], pts_orig[1,1], pts_orig[2,1]],
-        "trans_x": plot_trans[:, 0], "trans_y": plot_trans[:, 1],
-        "txt_trans_x": [pts_trans[0,0], pts_trans[1,0], pts_trans[2,0]],
-        "txt_trans_y": [pts_trans[0,1], pts_trans[1,1], pts_trans[2,1]],
-        "de_x": [pts_trans[1,0], pts_trans[2,0]], "de_y": [pts_trans[1,1], pts_trans[2,1]],
-        "de_color": de_color, "de_width": de_width,
-        "c_pos": [c], "c_label_text": [f"c={c:.1f}"]
-    }
+    return np.array([C_prime, D_prime, E_prime])
 
-# ==========================================
-# PART C: 侧边栏控制
-# ==========================================
+# --- 3. 侧边栏控制 ---
 with st.sidebar:
-    st.header("🎮 演示控制器")
-    mode = st.radio(
-        "请选择演示模式：",
-        ("1️⃣ 演示变换过程 (n型变换)", "2️⃣ 演示点 C 移动 (参数 c)", 
-         "3️⃣ 演示参数 n 变化", "4️⃣ 演示旋转角度变化")
-    )
+    st.header("🎮 探究控制台")
+    st.info("当前固定 $n=3$")
+    
+    # 唯一的自由度 c
+    c_val = st.slider("🅰️ 拖动点 C' (改变参数 c)", -5.0, 5.0, 1.0, 0.1)
+    
     st.divider()
     
-    # 默认值
-    c_val, n_val, angle_val = 1.0, 3.0, 180
-    current_progress = 1.0
-    anim_steps = []
-    anim_var_name = ""
+    st.markdown("### 辅助设置")
+    # 虽然只保留一个自由度，但为了演示"扫过"的效果，保留角度滑块作为演示辅助，或者自动播放
+    show_sample_tri = st.checkbox("显示示例三角形 D'E'", value=True)
+    angle_val = st.slider("示例三角形旋转角度", 0, 360, 45, 5, disabled=not show_sample_tri)
 
-    if "1️⃣" in mode:
-        c_val = st.slider("点 C 位置 (c)", -5.0, 8.0, 1.0)
-        n_val = st.slider("参数 n", 1.0, 5.0, 3.0)
-        angle_val = st.slider("旋转角度", 0, 360, 180, 15)
-        anim_steps = np.linspace(0, 1, 50)
-        anim_var_name = "progress"
-    elif "2️⃣" in mode:
-        n_val = st.slider("参数 n", 1.0, 5.0, 3.0)
-        angle_val = st.slider("旋转角度", 0, 360, 180, 15)
-        anim_steps = np.linspace(-4, 8, 60)
-        anim_var_name = "c"
-    elif "3️⃣" in mode:
-        c_val = st.slider("点 C 位置 (c)", -5.0, 8.0, 1.0)
-        angle_val = st.slider("旋转角度", 0, 360, 180, 15)
-        anim_steps = np.linspace(1, 6, 50)
-        anim_var_name = "n"
-    elif "4️⃣" in mode:
-        c_val = st.slider("点 C 位置 (c)", -5.0, 8.0, 1.0)
-        n_val = st.slider("参数 n", 1.0, 5.0, 3.0)
-        anim_steps = np.linspace(0, 360, 72)
-        anim_var_name = "angle"
+# --- 4. 计算绘图数据 ---
+# C' 坐标
+cx_prime = c_val + FIXED_N
+cy_prime = 2 * FIXED_N - c_val
 
-# ==========================================
-# PART D: 生成动画帧
-# ==========================================
-frames = []
-for val in anim_steps:
-    if anim_var_name == "progress": params = (c_val, n_val, angle_val, val)
-    elif anim_var_name == "c": params = (val, n_val, angle_val, current_progress)
-    elif anim_var_name == "n": params = (c_val, val, angle_val, current_progress)
-    elif anim_var_name == "angle": params = (c_val, n_val, val, current_progress)
-        
-    d = get_trace_data(*params)
-    
-    frames.append(go.Frame(
-        name=str(val),
-        traces=[1, 2, 3, 4, 5, 6, 7, 8],
-        data=[
-            go.Scatter(y=d['n_line_y']),
-            go.Scatter(x=d['c_line_x']),
-            go.Scatter(x=d['orig_x'], y=d['orig_y']),
-            go.Scatter(x=d['txt_orig_x'], y=d['txt_orig_y']),
-            go.Scatter(x=d['trans_x'], y=d['trans_y']),
-            go.Scatter(x=d['txt_trans_x'], y=d['txt_trans_y']),
-            go.Scatter(x=d['de_x'], y=d['de_y'], line=dict(color=d['de_color'], width=d['de_width'])),
-            go.Scatter(x=d['c_pos'], text=d['c_label_text'])
-        ]
+# 半径定义
+r_inner = 2.0               # D' 的轨迹半径 (|CD|)
+r_outer = np.sqrt(2**2 + 2**2) # E' 的轨迹半径 (|CE| = 2sqrt(2) approx 2.828)
+
+# 生成圆环填充数据 (利用 Plotly 的 path 技巧实现带孔多边形)
+theta = np.linspace(0, 2*np.pi, 120)
+# 外圆 (顺时针)
+x_out = cx_prime + r_outer * np.cos(theta)
+y_out = cy_prime + r_outer * np.sin(theta)
+# 内圆 (逆时针 - 用于挖洞)
+x_in = cx_prime + r_inner * np.cos(theta[::-1])
+y_in = cy_prime + r_inner * np.sin(theta[::-1])
+# 合并路径
+x_poly = np.concatenate([x_out, x_in])
+y_poly = np.concatenate([y_out, y_in])
+
+# 计算距离 y=x 的距离
+dist_to_line = abs(cx_prime - cy_prime) / np.sqrt(2)
+# 判断相交状态
+# 环形区域与直线相交条件：距离 <= 外半径
+# D'E'线段与直线相交条件：距离 在 [内半径, 外半径] 之间? 
+# 准确说是：圆环与直线有交集。
+intersect_status = "无交点"
+status_color = "gray"
+if dist_to_line > r_outer:
+    intersect_status = "相离 (无解)"
+    status_color = "red"
+elif dist_to_line < r_inner:
+    intersect_status = "包含直线 (可能无解，因为线段在两圆之间)" 
+    # 注意：线段D'E'是连接内圆和外圆的弦。如果直线穿过内圆，线段必然会穿过直线。
+    status_color = "orange"
+else:
+    intersect_status = "✅ 存在交点 (有解)"
+    status_color = "green"
+
+# 计算示例三角形
+tri_points = get_triangle_CDE(c_val, angle_val, FIXED_N)
+# 闭合用于画图
+tri_plot = np.vstack([tri_points, tri_points[0]])
+
+# --- 5. 绘图 ---
+st.title("🎯 n型变换：D'E' 扫过区域探究")
+st.markdown(f"""
+**当前状态：** $n=3, c={c_val:.1f}$  
+**中心点 $C'$ 坐标：** $({cx_prime:.1f}, {cy_prime:.1f})$  
+**$C'$ 到 $y=x$ 距离：** ${dist_to_line:.3f}$ (范围参考: $[2, 2\sqrt{{2}}] \\approx [2, 2.828]$)  
+**状态判定：** :{status_color}[**{intersect_status}**]
+""")
+
+fig = go.Figure()
+
+# [图层0] y=x (黑色虚线)
+fig.add_trace(go.Scatter(
+    x=[-10, 20], y=[-10, 20], mode='lines', 
+    line=dict(color='black', width=2, dash='dash'), name='y=x'
+))
+
+# [图层1] 扫过的圆环区域 (紫色半透明)
+fig.add_trace(go.Scatter(
+    x=x_poly, y=y_poly,
+    fill='toself', 
+    fillcolor='rgba(128, 0, 128, 0.2)', # 紫色半透明
+    line=dict(color='rgba(0,0,0,0)'),   # 无边框
+    name="D'E' 扫过区域",
+    hoverinfo='skip'
+))
+
+# [图层2] 内圆 (D' 轨迹)
+fig.add_trace(go.Scatter(
+    x=x_in, y=y_in, mode='lines',
+    line=dict(color='purple', width=1, dash='dot'),
+    name="D' 轨迹圆 (r=2)"
+))
+
+# [图层3] 外圆 (E' 轨迹)
+fig.add_trace(go.Scatter(
+    x=x_out, y=y_out, mode='lines',
+    line=dict(color='purple', width=2),
+    name="E' 轨迹圆 (r=2√2)"
+))
+
+# [图层4] 中心点 C'
+fig.add_trace(go.Scatter(
+    x=[cx_prime], y=[cy_prime], mode='markers+text',
+    marker=dict(size=10, color='red'),
+    text=["<b>C'</b>"], textposition="middle center", textfont=dict(color='white'),
+    name="中心 C'"
+))
+
+# [图层5] 示例三角形 (可选)
+if show_sample_tri:
+    # 填充三角形
+    fig.add_trace(go.Scatter(
+        x=tri_plot[:,0], y=tri_plot[:,1],
+        mode='lines', fill='toself', fillcolor='rgba(0, 200, 100, 0.3)',
+        line=dict(color='green', width=2),
+        name="当前示例三角形"
+    ))
+    # D'E' 线段高亮
+    fig.add_trace(go.Scatter(
+        x=[tri_points[1,0], tri_points[2,0]], 
+        y=[tri_points[1,1], tri_points[2,1]],
+        mode='lines+markers+text',
+        marker=dict(size=6, color='darkgreen'),
+        line=dict(color='darkgreen', width=4),
+        text=["<b>D'</b>", "<b>E'</b>"], textposition="top center", textfont=dict(size=14, color='darkgreen'),
+        name="D'E' 线段"
     ))
 
-# 初始计算
-start_val = anim_steps[0]
-if anim_var_name == "progress": init_params = (c_val, n_val, angle_val, start_val)
-elif anim_var_name == "c": init_params = (start_val, n_val, angle_val, current_progress)
-elif anim_var_name == "n": init_params = (c_val, start_val, angle_val, current_progress)
-elif anim_var_name == "angle": init_params = (c_val, n_val, start_val, current_progress)
-d0 = get_trace_data(*init_params)
-
-# ==========================================
-# PART E: 绘图与布局 (核心改动区)
-# ==========================================
-st.title("📐 几何变换全能演示系统")
-
-c_min, c_max = calc_c_range(angle_val if anim_var_name!='angle' else start_val, 
-                            n_val if anim_var_name!='n' else start_val)
-st.markdown(f"**📊 理论计算：** 当前状态下，使图形相交的 $c$ 的范围是 $[{c_min:.2f}, {c_max:.2f}]$")
-
-fig = go.Figure(
-    data=[
-        # [0] y=x (黑色虚线)
-        go.Scatter(x=[-10, 20], y=[-10, 20], mode='lines', line=dict(color='black', width=1.5, dash='dash'), name='y=x'),
-        # [1] 对称轴
-        go.Scatter(x=[-10, 20], y=d0['n_line_y'], mode='lines', line=dict(color='blue', dash='dashdot'), name='对称轴'),
-        # [2] c指示线
-        go.Scatter(x=d0['c_line_x'], y=[-10, 20], mode='lines', line=dict(color='red', width=1, dash='dot'), showlegend=False),
-        # [3] 原像
-        go.Scatter(x=d0['orig_x'], y=d0['orig_y'], mode='lines+markers', line=dict(color='#800080', dash='dot'), name='原像'),
-        # [4] 原像字母
-        go.Scatter(x=d0['txt_orig_x'], y=d0['txt_orig_y'], mode='text', text=["<b>C</b>","<b>D</b>","<b>E</b>"], 
-                   textfont=dict(size=14, color='#800080'), textposition="top left", showlegend=False),
-        # [5] 变换像
-        go.Scatter(x=d0['trans_x'], y=d0['trans_y'], mode='lines+markers', fill='toself', fillcolor='rgba(0, 128, 0, 0.2)',
-                   line=dict(color='green', width=3), name='变换像'),
-        # [6] 变换像字母
-        go.Scatter(x=d0['txt_trans_x'], y=d0['txt_trans_y'], mode='text', text=["<b>C'</b>","<b>D'</b>","<b>E'</b>"], 
-                   textfont=dict(size=16, color='black'), textposition="bottom right", showlegend=False),
-        # [7] D'E'
-        go.Scatter(x=d0['de_x'], y=d0['de_y'], mode='lines', line=dict(color=d0['de_color'], width=d0['de_width']), name="D'E'"),
-        # [8] c标签
-        go.Scatter(x=d0['c_pos'], y=[-0.5], mode='text', text=d0['c_label_text'], textfont=dict(color='red', size=14), showlegend=False)
-    ],
-    frames=frames
-)
-
-# 布局设置
+# 布局设置 (保持白板风格)
 fig.update_layout(
-    # --- 1. 背景颜色设置 ---
-    # 强制图表区域变成白纸
-    paper_bgcolor='white', 
-    plot_bgcolor='white',
-    
-    # --- 2. 字体颜色设置 ---
-    # 强制图表内的所有文字变黑 (因为网页是暗色的，Plotly默认可能会用白字，所以必须强制改黑)
-    font=dict(color="black"),
-    
+    paper_bgcolor='white', plot_bgcolor='white',
     height=700,
-    title=dict(text=f"<b>当前演示模式：{mode.split(' ')[1]}</b>", font=dict(size=20, color="black"), x=0.5),
-    
-    # --- 3. 坐标轴设置 (强制黑色) ---
     xaxis=dict(
-        range=[-6, 12], 
-        zeroline=True, zerolinecolor='black', zerolinewidth=2,
-        gridcolor='#e0e0e0', gridwidth=1,
-        tickfont=dict(color='black', size=14), # 强制刻度黑字
-        title_font=dict(color='black'),        # 强制标题黑字
-        showgrid=True
+        range=[-2, 14], scaleratio=1, scaleanchor="y",
+        zeroline=True, zerolinecolor='black', gridcolor='#e0e0e0', showgrid=True,
+        title=dict(text="x", font=dict(color="black")),
+        tickfont=dict(color="black")
     ),
     yaxis=dict(
-        range=[-6, 12], scaleanchor="x", scaleratio=1,
-        zeroline=True, zerolinecolor='black', zerolinewidth=2,
-        gridcolor='#e0e0e0', gridwidth=1,
-        tickfont=dict(color='black', size=14),
-        title_font=dict(color='black'),
-        showgrid=True
+        range=[-2, 10], 
+        zeroline=True, zerolinecolor='black', gridcolor='#e0e0e0', showgrid=True,
+        title=dict(text="y", font=dict(color="black")),
+        tickfont=dict(color="black")
     ),
-    
-    # --- 4. 图例设置 (白底黑字黑框) ---
-    legend=dict(
-        x=0.01, y=0.99, bgcolor="white",
-        bordercolor="black", borderwidth=1,
-        font=dict(color="black", size=12)
-    ),
-    
-    # --- 5. 动画控件样式 ---
-    updatemenus=[dict(
-        type="buttons", showactive=False,
-        x=0.05, y=0, xanchor="right", yanchor="top",
-        # 按钮背景白，文字黑
-        bgcolor="white", bordercolor="black", borderwidth=1, font=dict(color="black"),
-        buttons=[dict(label="▶️ 播放动画", method="animate", args=[None, dict(frame=dict(duration=50, redraw=True), fromcurrent=True)])]
-    )],
-    
-    sliders=[dict(
-        steps=[dict(
-            method="animate",
-            args=[[str(v)], dict(mode="immediate", frame=dict(duration=0, redraw=True))],
-            label=f"{v:.1f}"
-        ) for v in anim_steps],
-        active=0,
-        # 滑块文字颜色
-        currentvalue=dict(prefix=f"{anim_var_name} : ", font=dict(color="black")),
-        pad=dict(t=0), font=dict(color="black"),
-        bgcolor="white", bordercolor="lightgray", borderwidth=1
-    )]
+    legend=dict(x=0.01, y=0.99, bgcolor="rgba(255,255,255,0.8)", font=dict(color="black"))
 )
 
 st.plotly_chart(fig, use_container_width=True)
