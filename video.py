@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 
 # --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="n型变换：精准相交判定版",
+    page_title="n型变换：全功能终极版",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -13,12 +13,12 @@ st.set_page_config(
 FIXED_N = 3.0
 
 def get_triangle_CDE(c, angle_deg):
-    """计算变换后的示例三角形 C'D'E' (用于展示点的位置)"""
+    """计算变换后的示例三角形 C'D'E'"""
     theta = np.radians(angle_deg)
     xc_prime = c + FIXED_N
     yc_prime = 2 * FIXED_N - c
     
-    # 相对向量计算
+    # 相对向量
     vec_CD_x = 2 * np.cos(theta)
     vec_CD_y = 2 * np.sin(theta)
     vec_DE_x = vec_CD_y
@@ -35,93 +35,91 @@ def get_triangle_CDE(c, angle_deg):
     return np.array([[xc_prime, yc_prime], [D_prime_x, D_prime_y], [E_prime_x, E_prime_y]])
 
 def get_valid_sector_shape(c_val):
-    """
-    计算有效扇环区域的边界坐标
-    返回 x_coords, y_coords
-    """
+    """计算有效扇环区域 (紫色背景)"""
     xc_prime = c_val + FIXED_N
     yc_prime = 2 * FIXED_N - c_val
-    
-    # 有效角度范围 [135, 270]
-    # 增加采样密度以提高碰撞检测精度
     valid_angles = np.linspace(135, 270, 60)
     thetas = np.radians(valid_angles)
     
-    # 内弧 (D') & 外弧 (E')
     d_x = xc_prime + 2 * np.cos(thetas)
     d_y = yc_prime - 2 * np.sin(thetas)
-    e_x = xc_prime + (2 * np.cos(thetas) + 2 * np.sin(thetas))
-    e_y = yc_prime + (2 * np.cos(thetas) - 2 * np.sin(thetas))
+    e_x = xc_prime + (2*np.cos(thetas) + 2*np.sin(thetas))
+    e_y = yc_prime + (2*np.cos(thetas) - 2*np.sin(thetas))
     
-    # 拼接成闭合多边形 (外弧 -> 内弧反向 -> 闭合)
     poly_x = np.concatenate([e_x, d_x[::-1], [e_x[0]]])
     poly_y = np.concatenate([e_y, d_y[::-1], [e_y[0]]])
-    
     return poly_x, poly_y
 
-def check_polygon_line_intersection(poly_x, poly_y):
-    """
-    【核心修复】基于多边形边界的精确相交检测
-    原理：直线 y=x 等价于 f(x,y) = x - y = 0
-    我们检查多边形的每一条边，其两个端点 (x1, y1) 和 (x2, y2)
-    如果 (x1-y1) 和 (x2-y2) 异号，说明这条边穿过了 y=x。
-    """
-    # 计算所有顶点相对于直线 y=x 的“符号距离” (x - y)
-    diffs = poly_x - poly_y
-    
-    # 1. 快速排斥：如果所有点都在直线同一侧，肯定不相交
-    if np.all(diffs > 1e-5) or np.all(diffs < -1e-5):
-        return False
-    
-    # 2. 精确检测：遍历每一条边，看是否跨越 0
-    has_crossing = False
-    for i in range(len(diffs) - 1):
-        # 如果两个相邻点在直线异侧 (乘积小于0)，说明有交点
-        # 或者有点正好在直线上 (乘积等于0)
-        if diffs[i] * diffs[i+1] <= 1e-6:
-            has_crossing = True
-            break
-            
-    return has_crossing
-
 def get_circles_trace(c_val):
-    """获取完整的轨迹圆虚线"""
+    """完整轨迹圆虚线"""
     xc_prime = c_val + FIXED_N
     yc_prime = 2 * FIXED_N - c_val
     full_rad = np.radians(np.linspace(0, 360, 90))
     
-    # 内圆 r=2
     cin_x = xc_prime + 2 * np.cos(full_rad)
     cin_y = yc_prime + 2 * np.sin(full_rad)
-    # 外圆 r=2sqrt(2)
     r_out = 2 * np.sqrt(2)
     cout_x = xc_prime + r_out * np.cos(full_rad)
     cout_y = yc_prime + r_out * np.sin(full_rad)
     
     return np.concatenate([cin_x, [None], cout_x]), np.concatenate([cin_y, [None], cout_y])
 
-# --- 3. 动画帧生成 ---
+def check_angle_validity(angle):
+    """
+    判断当前角度是否符合 xD <= c 且 xE <= c
+    理论范围: [135, 270]
+    """
+    # 稍微给一点浮点数容差
+    if 135 - 0.1 <= angle <= 270 + 0.1:
+        return True, "✅ 角度满足题意", "green"
+    else:
+        return False, "❌ 角度不合题意 (须 $135^\\circ \\le \\theta \\le 270^\\circ$)", "gray"
+
+def check_polygon_line_intersection(poly_x, poly_y):
+    """多边形与直线 y=x 相交检测"""
+    diffs = poly_x - poly_y
+    if np.all(diffs > 1e-5) or np.all(diffs < -1e-5): return False
+    for i in range(len(diffs) - 1):
+        if diffs[i] * diffs[i+1] <= 1e-6: return True
+    return False
+
+# --- 3. 侧边栏与交互 ---
+with st.sidebar:
+    st.header("🎮 控制台")
+    st.markdown("### 1. 旋转自由度")
+    angle_val = st.slider("📐 调整旋转角度 (θ)", 0, 360, 180, 5)
+    
+    is_angle_valid, angle_msg, angle_color = check_angle_validity(angle_val)
+    if is_angle_valid:
+        st.success(angle_msg)
+    else:
+        st.warning(angle_msg)
+
+    st.divider()
+    st.markdown("### 2. 平移自由度 (动画)")
+    st.info("点击下方播放键控制 c")
+
+# --- 4. 动画帧生成 ---
 c_start, c_end = -2.0, 6.0
-steps = 100 
+steps = 100
 c_values = np.linspace(c_start, c_end, steps)
 frames = []
 
 for val in c_values:
-    # 1. 计算形状
+    # 计算数据
     sx, sy = get_valid_sector_shape(val)
     circ_x, circ_y = get_circles_trace(val)
     cx, cy = val + FIXED_N, 2 * FIXED_N - val
-    tri = get_triangle_CDE(val, 180) 
+    tri = get_triangle_CDE(val, angle_val) # 使用侧边栏选定的角度
     
-    # 2. 【核心修复】精确判定
+    # 状态判定
     is_intersect = check_polygon_line_intersection(sx, sy)
+    status_text = "✅ <b>扇环与直线相交</b>" if is_intersect else "❌ 相离"
+    status_color = "#008000" if is_intersect else "gray"
     
-    if is_intersect:
-        status_text = "✅ <b>相交</b>"
-        status_color = "#008000" # 深绿
-    else:
-        status_text = "❌ 相离"
-        status_color = "gray"
+    # 三角形颜色根据角度合法性改变
+    tri_color = "green" if is_angle_valid else "gray"
+    tri_opacity = 1.0 if is_angle_valid else 0.3
     
     frames.append(go.Frame(
         name=f"{val:.2f}",
@@ -129,15 +127,16 @@ for val in c_values:
         data=[
             # [2] 扇环
             go.Scatter(x=sx, y=sy),
-            # [3] 完整圆轨迹
+            # [3] 轨迹圆
             go.Scatter(x=circ_x, y=circ_y),
             # [4] C'
             go.Scatter(x=[cx], y=[cy]),
-            # [5] 示例三角形
+            # [5] 示例三角形 (随角度变化颜色)
             go.Scatter(
                 x=np.vstack([tri, tri[0]])[:,0], 
                 y=np.vstack([tri, tri[0]])[:,1],
-                # textposition 已在 layout 固定，这里无需重复
+                line=dict(color=tri_color, width=2),
+                opacity=tri_opacity
             ),
             # [6] 状态文字
             go.Scatter(
@@ -147,18 +146,20 @@ for val in c_values:
         ]
     ))
 
-# 初始第一帧
+# 初始帧计算
 init_c = c_values[0]
 sx_0, sy_0 = get_valid_sector_shape(init_c)
 circ_x0, circ_y0 = get_circles_trace(init_c)
 cx_0, cy_0 = init_c + FIXED_N, 2 * FIXED_N - init_c
-tri_0 = get_triangle_CDE(init_c, 180)
+tri_0 = get_triangle_CDE(init_c, angle_val)
 init_intersect = check_polygon_line_intersection(sx_0, sy_0)
-init_status = "✅ <b>相交</b>" if init_intersect else "❌ 相离"
+init_status = "✅ <b>扇环与直线相交</b>" if init_intersect else "❌ 相离"
 init_color = "#008000" if init_intersect else "gray"
+tri_color_0 = "green" if is_angle_valid else "gray"
+tri_opacity_0 = 1.0 if is_angle_valid else 0.3
 
-# --- 4. 绘图主程序 ---
-st.title("🎯 n型变换：精确碰撞检测演示")
+# --- 5. 绘图主程序 ---
+st.title("🎯 n型变换：双自由度判定演示")
 
 fig = go.Figure(
     data=[
@@ -176,14 +177,14 @@ fig = go.Figure(
             x=sx_0, y=sy_0,
             fill='toself', fillcolor='rgba(128, 0, 128, 0.4)',
             line=dict(color='purple', width=1),
-            name="有效区域", hoverinfo='skip'
+            name="符合题意区域", hoverinfo='skip'
         ),
         
         # [3] 完整圆轨迹
         go.Scatter(
             x=circ_x0, y=circ_y0, mode='lines',
             line=dict(color='gray', width=1, dash='dot'),
-            name="完整轨迹", hoverinfo='skip'
+            name="完整轨迹圆", hoverinfo='skip'
         ),
         
         # [4] C'点
@@ -192,16 +193,17 @@ fig = go.Figure(
             marker=dict(size=8, color='red'), name="C'"
         ),
         
-        # [5] 示例三角形
+        # [5] 示例三角形 (受角度控制)
         go.Scatter(
             x=np.vstack([tri_0, tri_0[0]])[:,0],
             y=np.vstack([tri_0, tri_0[0]])[:,1],
             mode='lines+text',
-            line=dict(color='green', width=2),
+            line=dict(color=tri_color_0, width=2),
+            opacity=tri_opacity_0,
             text=["<b>C'</b>", "<b>D'</b>", "<b>E'</b>", ""], 
             textposition=["top right", "bottom left", "bottom right", "top right"],
             textfont=dict(color='black', size=14),
-            name="示例 D'E'"
+            name="当前 D'E'"
         ),
         
         # [6] 状态标签
@@ -216,12 +218,12 @@ fig = go.Figure(
     frames=frames
 )
 
-# 布局设置
+# 布局设置 (修复图例不清)
 fig.update_layout(
     paper_bgcolor='white', plot_bgcolor='white',
     font=dict(color='black', size=14),
     height=700,
-    title=dict(text="<b>点击播放 ▶️ 观察紫色区域是否穿过虚线</b>", x=0.5, font=dict(color='black')),
+    title=dict(text="<b>手动调节角度 + 自动播放移动</b>", x=0.5, font=dict(color='black')),
     
     xaxis=dict(range=[-2, 14], scaleratio=1, scaleanchor="y", 
                zeroline=True, zerolinecolor='black', gridcolor='#e0e0e0', showgrid=True,
@@ -230,15 +232,21 @@ fig.update_layout(
                zeroline=True, zerolinecolor='black', gridcolor='#e0e0e0', showgrid=True,
                tickfont=dict(color='black'), title=dict(text="y", font=dict(color='black'))),
     
-    # 动画设置 (速度调整为 60ms)
+    # 【核心修复】图例清晰化
+    legend=dict(
+        x=0.01, y=0.99,
+        bgcolor="rgba(255, 255, 255, 0.9)", # 半透明白底
+        bordercolor="black", borderwidth=1,
+        font=dict(color="black", size=12)   # 强制黑字
+    ),
+    
     updatemenus=[dict(
         type="buttons", showactive=False,
         x=0.1, y=0, xanchor="right", yanchor="top",
         bgcolor="white", bordercolor="black", borderwidth=1, font=dict(color="black"),
         buttons=[dict(
-            label="▶️ 播放 (正常速度)",
+            label="▶️ 播放动画",
             method="animate",
-            # duration=60ms -> 既不拖沓，也能看清相交细节
             args=[None, dict(frame=dict(duration=60, redraw=True), fromcurrent=True)]
         )]
     )],
