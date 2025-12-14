@@ -36,11 +36,7 @@ def get_triangle_CDE(c, angle_deg):
     return np.array([[xc_prime, yc_prime], [D_prime_x, D_prime_y], [E_prime_x, E_prime_y]])
 
 def get_sector_and_circles(c_val):
-    """
-    同时计算：
-    1. 有效扇环区域 (紫色填充)
-    2. 完整的 D' 和 E' 轨迹圆 (灰色虚线)
-    """
+    """同时计算有效扇环和完整轨迹圆"""
     xc_prime = c_val + FIXED_N
     yc_prime = 2 * FIXED_N - c_val
     
@@ -48,10 +44,9 @@ def get_sector_and_circles(c_val):
     valid_angles = np.linspace(135, 270, 40)
     thetas = np.radians(valid_angles)
     
-    # 内弧 (D') & 外弧 (E')
     d_x = xc_prime + 2 * np.cos(thetas)
     d_y = yc_prime - 2 * np.sin(thetas)
-    e_x = xc_prime + (2*np.cos(thetas) + 2*np.sin(thetas)) # r=2sqrt(2)
+    e_x = xc_prime + (2*np.cos(thetas) + 2*np.sin(thetas))
     e_y = yc_prime + (2*np.cos(thetas) - 2*np.sin(thetas))
     
     sector_x = np.concatenate([e_x, d_x[::-1], [e_x[0]]])
@@ -61,16 +56,13 @@ def get_sector_and_circles(c_val):
     full_angles = np.linspace(0, 360, 90)
     full_rad = np.radians(full_angles)
     
-    # 内圆完整轨迹 (r=2)
     circle_in_x = xc_prime + 2 * np.cos(full_rad)
-    circle_in_y = yc_prime + 2 * np.sin(full_rad) # 注意这里不需要负号，画圆形状一样即可
+    circle_in_y = yc_prime + 2 * np.sin(full_rad)
     
-    # 外圆完整轨迹 (r=2sqrt(2))
     r_out = 2 * np.sqrt(2)
     circle_out_x = xc_prime + r_out * np.cos(full_rad)
     circle_out_y = yc_prime + r_out * np.sin(full_rad)
     
-    # 用 None 隔开，在一个 trace 里画两个圈
     circles_x = np.concatenate([circle_in_x, [None], circle_out_x])
     circles_y = np.concatenate([circle_in_y, [None], circle_out_y])
     
@@ -85,25 +77,23 @@ def check_intersection_status(c_val):
     
     if dist > r_out: return "❌ 相离", "gray"
     elif dist < r_in: return "⚠️ 包含无解", "orange"
-    else: return "✅ **相交**", "#008000" # 深绿色
+    else: return "✅ **相交**", "#008000"
 
 # --- 3. 动画帧生成 ---
 c_start, c_end = -2.0, 6.0
-steps = 100 # 增加帧数，让移动更平滑
+steps = 100 
 c_values = np.linspace(c_start, c_end, steps)
 frames = []
 
 for val in c_values:
-    # 计算数据
     sx, sy, circ_x, circ_y = get_sector_and_circles(val)
     cx, cy = val + FIXED_N, 2 * FIXED_N - val
-    # 计算示例三角形 (固定角度180度，方便看 D' E')
     tri = get_triangle_CDE(val, 180) 
     status_text, status_color = check_intersection_status(val)
     
     frames.append(go.Frame(
         name=f"{val:.2f}",
-        traces=[2, 3, 4, 5, 6], # 更新指定的动态图层
+        traces=[2, 3, 4, 5, 6],
         data=[
             # [2] 有效扇环
             go.Scatter(x=sx, y=sy),
@@ -115,7 +105,8 @@ for val in c_values:
             go.Scatter(
                 x=np.vstack([tri, tri[0]])[:,0], 
                 y=np.vstack([tri, tri[0]])[:,1],
-                text=["<b>C'</b>", "<b>D'</b>", "<b>E'</b>", ""], # 对应点的标签
+                text=["<b>C'</b>", "<b>D'</b>", "<b>E'</b>", ""],
+                # 这里的 textposition 在 update 时不需要再次指定，会沿用 layout 或初始 trace 的设置
             ),
             # [6] 状态文字
             go.Scatter(
@@ -154,11 +145,11 @@ fig = go.Figure(
             name="有效区域", hoverinfo='skip'
         ),
         
-        # [3] 完整圆轨迹 (灰色虚线 - 新增)
+        # [3] 完整圆轨迹 (灰色虚线)
         go.Scatter(
             x=circ_x0, y=circ_y0,
             mode='lines',
-            line=dict(color='gray', width=1, dash='dot'), # 灰色细虚线
+            line=dict(color='gray', width=1, dash='dot'),
             name="完整轨迹圆", hoverinfo='skip'
         ),
         
@@ -168,15 +159,16 @@ fig = go.Figure(
             marker=dict(size=8, color='red'), name="C'"
         ),
         
-        # [5] 示例三角形 + 顶点字母 (重点修改)
+        # [5] 示例三角形 + 顶点字母 (已修复报错)
         go.Scatter(
             x=np.vstack([tri_0, tri_0[0]])[:,0],
             y=np.vstack([tri_0, tri_0[0]])[:,1],
-            mode='lines+text', # 线条+文字
+            mode='lines+text',
             line=dict(color='green', width=2),
-            text=["<b>C'</b>", "<b>D'</b>", "<b>E'</b>", ""], # 标签内容
-            textposition=["top right", "bottom left", "bottom right", ""], # 标签位置
-            textfont=dict(color='black', size=14), # 强制黑字
+            text=["<b>C'</b>", "<b>D'</b>", "<b>E'</b>", ""], 
+            # 【修复点】：第4个位置必须是有效字符串，不能是空字符串，即使它不显示文字
+            textposition=["top right", "bottom left", "bottom right", "top right"], 
+            textfont=dict(color='black', size=14),
             name="示例 D'E'"
         ),
         
@@ -206,7 +198,6 @@ fig.update_layout(
                zeroline=True, zerolinecolor='black', gridcolor='#e0e0e0', showgrid=True,
                tickfont=dict(color='black'), title=dict(text="y", font=dict(color='black'))),
     
-    # 动画设置 (核心修改：变慢)
     updatemenus=[dict(
         type="buttons", showactive=False,
         x=0.1, y=0, xanchor="right", yanchor="top",
@@ -214,7 +205,6 @@ fig.update_layout(
         buttons=[dict(
             label="▶️ 播放 (慢速)",
             method="animate",
-            # duration=150 (毫秒) -> 每帧停留0.15秒，比之前慢很多
             args=[None, dict(frame=dict(duration=150, redraw=True), fromcurrent=True)]
         )]
     )],
